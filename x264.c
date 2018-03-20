@@ -65,6 +65,8 @@
 #include <ffms.h>
 #endif
 
+#include "PerfUtils/cycles_wrapper.h"
+
 #ifdef _WIN32
 #define CONSOLE_TITLE_SIZE 200
 static wchar_t org_console_title[CONSOLE_TITLE_SIZE] = L"";
@@ -353,6 +355,7 @@ static void print_version_info( void )
 
 int main( int argc, char **argv )
 {
+    cycles_init();
     x264_param_t param;
     cli_opt_t opt = {0};
     int ret = 0;
@@ -1941,9 +1944,27 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
     if( opt->tcfile_out )
         fprintf( opt->tcfile_out, "# timecode format v2\n" );
 
+    /* Prepare to log */
+    FILE* fLog = fopen("x264.log", "w");
+    if (fLog == NULL)
+        abort();
+    fprintf(fLog, "CurrentTimeInCycles,FramesEncoded,FramesPerSecond\n");
+    uint64_t previousFrames = 0;
+    uint64_t previousTime = cycles_rdtsc();
+    uint64_t nextTime = previousTime + cycles_from_milliseconds(200);
     /* Encode frames */
     for( ; !b_ctrl_c && (i_frame < param->i_frame_total || !param->i_frame_total); i_frame++ )
     {
+        uint64_t currentTime = cycles_rdtsc();
+        if (currentTime >= nextTime) {
+            double timeDelta = cycles_to_seconds(currentTime - previousTime);
+            // TODO: Change this into an in-memory log and print at the end.
+            fprintf(fLog, "%lu,%lu,%d\n", currentTime, (i_frame_output - previousFrames),
+                    (int) ((i_frame_output - previousFrames) / timeDelta));
+            previousFrames = i_frame_output;
+            previousTime = currentTime;
+            nextTime = previousTime + cycles_from_milliseconds(200);
+        }
         if( filter.get_frame( opt->hin, &cli_pic, i_frame + opt->i_seek ) )
             break;
         x264_picture_init( &pic );
@@ -2002,6 +2023,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
         if( opt->b_progress && i_frame_output )
             i_previous = print_status( i_start, i_previous, i_frame_output, param->i_frame_total, i_file, param, 2 * last_dts - prev_dts - first_dts );
     }
+    fclose(fLog);
     /* Flush delayed frames */
     while( !b_ctrl_c && x264_encoder_delayed_frames( h ) )
     {
