@@ -36,6 +36,7 @@
 #include <io.h>       /* _setmode() */
 #include <fcntl.h>    /* _O_BINARY */
 #endif
+#include <sys/time.h>
 
 #include <signal.h>
 #include <getopt.h>
@@ -64,8 +65,6 @@
 #if HAVE_FFMS
 #include <ffms.h>
 #endif
-
-#include "PerfUtils/cycles_wrapper.h"
 
 #ifdef _WIN32
 #define CONSOLE_TITLE_SIZE 200
@@ -355,7 +354,6 @@ static void print_version_info( void )
 
 int main( int argc, char **argv )
 {
-    cycles_init();
     x264_param_t param;
     cli_opt_t opt = {0};
     int ret = 0;
@@ -1879,6 +1877,12 @@ do\
     }\
 } while( 0 )
 
+static uint64_t getTimeInUsec() {
+    static struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec * 1000000 + tv.tv_usec;
+}
+
 static int encode( x264_param_t *param, cli_opt_t *opt )
 {
     x264_t *h = NULL;
@@ -1948,22 +1952,23 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
     FILE* fLog = fopen("x264.log", "w");
     if (fLog == NULL)
         abort();
-    fprintf(fLog, "CurrentTimeInCycles,FramesEncoded,FramesPerSecond\n");
+    fprintf(fLog, "CurrentTimeInUSecSinceEpoch,FramesEncoded,FramesPerSecond\n");
     uint64_t previousFrames = 0;
-    uint64_t previousTime = cycles_rdtsc();
-    uint64_t nextTime = previousTime + cycles_from_milliseconds(200);
+    // Store times in microseconds
+    uint64_t previousTime = getTimeInUsec();
+    uint64_t nextTime = previousTime + 200 * 1000;
     /* Encode frames */
     for( ; !b_ctrl_c && (i_frame < param->i_frame_total || !param->i_frame_total); i_frame++ )
     {
-        uint64_t currentTime = cycles_rdtsc();
+        uint64_t currentTime = getTimeInUsec();
         if (currentTime >= nextTime) {
-            double timeDelta = cycles_to_seconds(currentTime - previousTime);
+            double timeDeltaInSeconds = (currentTime - previousTime) * 1.0 / 1E6;
             // TODO: Change this into an in-memory log and print at the end.
             fprintf(fLog, "%lu,%lu,%d\n", currentTime, (i_frame_output - previousFrames),
-                    (int) ((i_frame_output - previousFrames) / timeDelta));
+                    (int) ((i_frame_output - previousFrames) / timeDeltaInSeconds));
             previousFrames = i_frame_output;
             previousTime = currentTime;
-            nextTime = previousTime + cycles_from_milliseconds(200);
+            nextTime = previousTime + 200 * 1000;
         }
         if( filter.get_frame( opt->hin, &cli_pic, i_frame + opt->i_seek ) )
             break;
