@@ -379,13 +379,6 @@ int main( int argc, char **argv )
     if( parse( argc, argv, &param, &opt ) < 0 )
         ret = -1;
 
-    timetrace_set_output_filename(opt.timetrace_log_file);
-    timetrace_set_keepoldevents(true);
-    coreStatsPrefix = opt.coretrace_prefix;
-    corestats = calloc(128, sizeof(coreStats));
-    pthread_key_create(&corestats_key, NULL);
-    assign_corestats("vid0");
-
 #ifdef _WIN32
     /* Restore title; it can be changed by input modules */
     SetConsoleTitleW( org_console_title );
@@ -1617,6 +1610,12 @@ generic_option:
         }
     }
 
+    timetrace_set_output_filename(opt->timetrace_log_file);
+    timetrace_set_keepoldevents(true);
+    coreStatsPrefix = opt->coretrace_prefix;
+    corestats = calloc(128, sizeof(coreStats));
+    pthread_key_create(&corestats_key, NULL);
+    assign_corestats("vid0");
     /* If first pass mode is used, apply faster settings. */
     if( b_turbo )
         x264_param_apply_fastfirstpass( param );
