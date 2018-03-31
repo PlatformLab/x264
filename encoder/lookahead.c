@@ -38,6 +38,7 @@
  */
 #include "common/common.h"
 #include "analyse.h"
+#include "../corestats.h"
 
 static void lookahead_shift( x264_sync_frame_list_t *dst, x264_sync_frame_list_t *src, int count )
 {
@@ -89,8 +90,10 @@ static void lookahead_slicetype_decide( x264_t *h )
 
 static void *lookahead_thread( x264_t *h )
 {
+    assign_corestats("look");
     while( !h->lookahead->b_exit_thread )
     {
+        log_corestats();
         x264_pthread_mutex_lock( &h->lookahead->ifbuf.mutex );
         x264_pthread_mutex_lock( &h->lookahead->next.mutex );
         int shift = X264_MIN( h->lookahead->next.i_max_size - h->lookahead->next.i_size, h->lookahead->ifbuf.i_size );

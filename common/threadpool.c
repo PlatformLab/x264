@@ -24,6 +24,7 @@
  *****************************************************************************/
 
 #include "common.h"
+#include "../corestats.h"
 
 typedef struct
 {
@@ -49,11 +50,22 @@ struct x264_threadpool_t
 
 static void *threadpool_thread( x264_threadpool_t *pool )
 {
+    char threadName[100];
+    int myThreadId;
+    {
+        pthread_mutex_lock(&threadCounterLock);
+        myThreadId = nextThreadId++;
+        pthread_mutex_unlock(&threadCounterLock);
+        sprintf(threadName, "vid%d", myThreadId);
+        assign_corestats(threadName);
+    }
+
     if( pool->init_func )
         pool->init_func( pool->init_arg );
 
     while( !pool->exit )
     {
+        log_corestats();
         x264_threadpool_job_t *job = NULL;
         x264_pthread_mutex_lock( &pool->run.mutex );
         while( !pool->exit && !pool->run.i_size )

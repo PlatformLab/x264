@@ -44,6 +44,7 @@
 #include "input/input.h"
 #include "output/output.h"
 #include "filters/filters.h"
+#include "corestats.h"
 
 #define QP_MAX_SPEC (51+6*2)
 #define QP_MAX (QP_MAX_SPEC+18)
@@ -159,6 +160,8 @@ typedef struct {
     double timebase_convert_multiplier;
     int i_pulldown;
     char* qps_log_file;
+    char* timetrace_log_file;
+    char* coretrace_prefix;
 } cli_opt_t;
 
 /* file i/o operation structs */
@@ -370,9 +373,18 @@ int main( int argc, char **argv )
     _setmode( _fileno( stderr ), _O_BINARY );
 #endif
     opt.qps_log_file = "x264.log";
+    opt.timetrace_log_file = "timetrace.log";
+    opt.coretrace_prefix = "a";
     /* Parse command line */
     if( parse( argc, argv, &param, &opt ) < 0 )
         ret = -1;
+
+    timetrace_set_output_filename(opt.timetrace_log_file);
+    timetrace_set_keepoldevents(true);
+    coreStatsPrefix = opt.coretrace_prefix;
+    corestats = calloc(128, sizeof(coreStats));
+    pthread_key_create(&corestats_key, NULL);
+    assign_corestats("vid0");
 
 #ifdef _WIN32
     /* Restore title; it can be changed by input modules */
@@ -887,6 +899,8 @@ static void help( x264_param_t *defaults, int longhelp )
     H0( "\n" );
     H0( "  -o, --output <string>       Specify output file\n" );
     H0( "      --qpslogfile <string>   Specify log file for continuous qps output\n" );
+    H0( "      --timetrace <string>    Specify log file for time traces\n" );
+    H0( "      --coretrace <string>    Specify the prefix for coretraces\n" );
     H1( "      --muxer <string>        Specify output container format [\"%s\"]\n"
         "                                  - %s\n", muxer_names[0], stringify_names( buf, muxer_names ) );
     H1( "      --demuxer <string>      Specify input container format [\"%s\"]\n"
@@ -991,7 +1005,9 @@ typedef enum
     OPT_OUTPUT_CSP,
     OPT_INPUT_RANGE,
     OPT_RANGE,
-    OPT_QPS_LOG
+    OPT_QPS_LOG,
+    OPT_TIMETRACE,
+    OPT_CACHETRACE
 } OptionsOPT;
 
 static char short_options[] = "8A:B:b:f:hI:i:m:o:p:q:r:t:Vvw";
@@ -1163,6 +1179,8 @@ static struct option long_options[] =
     { "stitchable",        no_argument, NULL, 0 },
     { "filler",            no_argument, NULL, 0 },
     { "qpslogfile",  required_argument, NULL, OPT_QPS_LOG },
+    { "timetrace",  required_argument, NULL, OPT_TIMETRACE},
+    { "coretrace",  required_argument, NULL, OPT_CACHETRACE },
     {0, 0, 0, 0}
 };
 
@@ -1562,6 +1580,12 @@ static int parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
                 break;
             case OPT_QPS_LOG:
                 opt->qps_log_file = strdup(optarg);
+                break;
+            case OPT_TIMETRACE:
+                opt->timetrace_log_file = strdup(optarg);
+                break;
+            case OPT_CACHETRACE:
+                opt->coretrace_prefix = strdup(optarg);
                 break;
             default:
 generic_option:
@@ -1977,6 +2001,9 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
             previousTime = currentTime;
             nextTime = previousTime + 200 * 1000;
         }
+
+        log_corestats();
+
         if( filter.get_frame( opt->hin, &cli_pic, i_frame + opt->i_seek ) )
             break;
         x264_picture_init( &pic );
@@ -2036,6 +2063,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
             i_previous = print_status( i_start, i_previous, i_frame_output, param->i_frame_total, i_file, param, 2 * last_dts - prev_dts - first_dts );
     }
     fclose(fLog);
+    timetrace_print();
     /* Flush delayed frames */
     while( !b_ctrl_c && x264_encoder_delayed_frames( h ) )
     {
