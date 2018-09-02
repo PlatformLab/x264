@@ -390,7 +390,11 @@ static ALWAYS_INLINE void x264_prefetch( void *p )
     { UNUSED status_t nice_ret = set_thread_priority( find_thread( NULL ), B_LOW_PRIORITY ); }
 #else
 #include <unistd.h>
+#ifdef NICE
 #define x264_lower_thread_priority(p) { UNUSED int nice_ret = nice(p); }
+#else
+#define x264_lower_thread_priority(p)
+#endif /* NICE */
 #endif /* SYS_WINDOWS */
 #elif HAVE_WIN32THREAD
 #define x264_lower_thread_priority(p) SetThreadPriority( GetCurrentThread(), X264_MAX( -2, -p ) )
